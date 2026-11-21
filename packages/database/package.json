@@ -1,0 +1,19 @@
+{
+  "name": "@rag/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@rag/config": "*",
+    "@rag/shared": "*",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^3.4.9"
+  }
+}

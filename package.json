@@ -1,0 +1,58 @@
+{
+  "name": "rag-institucional",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plataforma RAG institucional para consulta de documentos da Polícia Penal do Estado de Goiás",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "infra:up": "bash infrastructure/local/infra.sh start",
+    "infra:down": "bash infrastructure/local/infra.sh stop",
+    "infra:status": "bash infrastructure/local/infra.sh status",
+    "db:migrate": "npm run migrate -w @rag/database",
+    "db:seed": "npm run seed -w @rag/database",
+    "dev:up": "bash scripts/dev.sh up",
+    "dev:down": "bash scripts/dev.sh down",
+    "dev:status": "bash scripts/dev.sh status",
+    "dev:api": "npm run dev -w @rag/api",
+    "dev:worker": "npm run dev -w @rag/worker",
+    "dev:web": "npm run dev -w @rag/web",
+    "build": "npm run build -w @rag/api -w @rag/worker -w @rag/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @rag/web",
+    "lint": "eslint .",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:security": "vitest run --project security",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:security",
+    "fixtures:generate": "tsx tests/fixtures/generate-corpus.ts",
+    "fixtures:seed": "tsx tests/fixtures/seed-corpus.ts",
+    "eval:run": "tsx tests/evaluations/run-eval.ts",
+    "eval:regrade": "tsx tests/evaluations/regrade-grounding.ts",
+    "eval:calibrate-rerank": "tsx tests/evaluations/calibrate-rerank.ts",
+    "reranker:download": "mkdir -p .data/models && curl -fL -o .data/models/bge-reranker-v2-m3-FP16.gguf https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-FP16.gguf",
+    "reranker:start": "llama-server -m .data/models/bge-reranker-v2-m3-FP16.gguf --reranking --host 127.0.0.1 --port 8080 -c 8192 -np 4 -b 2048 -ub 2048 -ngl 99 --no-webui",
+    "perf:retrieval": "tsx tests/performance/retrieval-benchmark.ts",
+    "perf:ingestion": "tsx tests/performance/ingestion-benchmark.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.19.2",
+    "docx": "^9.14.0",
+    "eslint": "^10.13.0",
+    "pdf-lib": "^1.17.1",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}

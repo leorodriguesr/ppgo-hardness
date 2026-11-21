@@ -1,0 +1,19 @@
+{
+  "name": "@rag/rag",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@rag/ai": "*",
+    "@rag/config": "*",
+    "@rag/database": "*",
+    "@rag/shared": "*",
+    "@rag/storage": "*",
+    "drizzle-orm": "^0.45.4",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.4.299",
+    "zod": "^4.6.7"
+  }
+}

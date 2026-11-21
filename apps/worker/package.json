@@ -1,0 +1,21 @@
+{
+  "name": "@rag/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@rag/ai": "*",
+    "@rag/config": "*",
+    "@rag/database": "*",
+    "@rag/rag": "*",
+    "@rag/shared": "*",
+    "@rag/storage": "*",
+    "bullmq": "^5.81.5",
+    "ioredis": "^5.11.1"
+  }
+}

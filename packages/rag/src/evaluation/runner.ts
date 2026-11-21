@@ -44,6 +44,8 @@ export interface CaseOutcome {
   externalId: string;
   category: string;
   expected: string;
+  answer: string | null;
+  citations: { label: string; valid: boolean; supportScore: number | null }[];
   metrics: Record<string, unknown>;
   judge: JudgeVerdict | null;
   behaviorPass: boolean | null;
@@ -264,7 +266,23 @@ export async function runEvaluation(deps: EngineDeps, opts: EvaluationOptions): 
         }
       }
 
-      outcomes.push({ externalId: c.externalId, category: c.category, expected: c.expectedBehavior, metrics, judge, behaviorPass, securityViolation, error, latencyMs });
+      outcomes.push({
+        externalId: c.externalId,
+        category: c.category,
+        expected: c.expectedBehavior,
+        answer: result?.content ?? null,
+        citations: (result?.citations ?? []).map((ct) => ({
+          label: `Fonte ${ct.sourceNumber}${ct.page ? `, p. ${ct.page}` : ''}`,
+          valid: ct.valid,
+          supportScore: ct.supportScore ?? null,
+        })),
+        metrics,
+        judge,
+        behaviorPass,
+        securityViolation,
+        error,
+        latencyMs,
+      });
       await insertResult(db, {
         runId,
         caseId: c.id,

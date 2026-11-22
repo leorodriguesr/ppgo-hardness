@@ -99,6 +99,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         mode,
         overrides,
         judgeModel: env.JUDGE_MODEL,
+        judgeChat: runtime.judgeChat,
         infraChecks: mode === 'full' && !cases,
         notes: arg('notes'),
         caseFilter: cases ? (c) => cases.includes(c.externalId) : undefined,

@@ -1,6 +1,7 @@
 import {
   createChatProvider,
   createEmbeddingProvider,
+  createJudgeProvider,
   HttpReranker,
   LlmReranker,
   NoopReranker,
@@ -86,6 +87,8 @@ export interface Runtime {
   db: Database;
   storage: StorageAdapter;
   chat: ChatProvider;
+  /** Provedor do juiz das avaliações, quando configurado à parte (`JUDGE_*`). */
+  judgeChat?: ChatProvider;
   settings: SettingsProvider;
   extractors: ExtractorRegistry;
   ocr: OcrEngine;
@@ -110,6 +113,7 @@ export function createRuntime(env: Env, name: string, opts: { poolMax?: number; 
   };
 
   const chat = createChatProvider(env, onUsage);
+  const judgeChat = createJudgeProvider(env, onUsage);
   const embeddingCache = new Map<string, EmbeddingProvider>();
   const embeddingProviderFor: Runtime['embeddingProviderFor'] = (model) => {
     const key = `${model.provider}:${model.model}:${model.dimensions}`;
@@ -181,6 +185,7 @@ export function createRuntime(env: Env, name: string, opts: { poolMax?: number; 
     db,
     storage,
     chat,
+    judgeChat,
     settings,
     extractors,
     ocr,

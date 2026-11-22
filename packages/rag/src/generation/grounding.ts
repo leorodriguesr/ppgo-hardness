@@ -43,8 +43,9 @@ export interface Claim {
  * Versão do verificador lexical, gravada em cada execução de avaliação. Mudar a divisão em
  * afirmações ou o cálculo de suporte altera groundingScore e citationSupport: incremente aqui.
  * v2: abreviações (Art., nº) e pontuação dentro de marcadores de citação não encerram afirmação.
+ * v3: a linha "Citação:" / "Citações:" também anexa o marcador às afirmações anteriores.
  */
-export const GROUNDING_CHECK_VERSION = 'lexical-v2';
+export const GROUNDING_CHECK_VERSION = 'lexical-v3';
 
 const MARKER_RE = /\[[^\]\n]*fonte[^\]\n]*\]/gi;
 
@@ -82,7 +83,7 @@ export function splitClaims(answer: string, checks: CitationCheck[]): Claim[] {
 }
 
 const REFERENCE_RE =
-  /^(?:(?:essas?|estas?|tais|as)\s+(?:informa[cç](?:[aã]o|[oõ]es)|regras|orienta[cç](?:[aã]o|[oõ]es)|disposi[cç](?:[aã]o|[oõ]es))\s+(?:est[aã]o|est[aá]|consta[m]?|encontra[m]?-se|foram?\s+extra[ií]das?)|(?:fontes?|refer[eê]ncias?)\s*:?)[^.]{0,60}\.?$/i;
+  /^(?:(?:essas?|estas?|tais|as)\s+(?:informa[cç](?:[aã]o|[oõ]es)|regras|orienta[cç](?:[aã]o|[oõ]es)|disposi[cç](?:[aã]o|[oõ]es))\s+(?:est[aã]o|est[aá]|consta[m]?|encontra[m]?-se|foram?\s+extra[ií]das?)|(?:fontes?|refer[eê]ncias?|cita[cç][aã]o|cita[cç][oõ]es)\s*:?)[^.]{0,60}\.?$/i;
 
 const META_RE = /^(conforme|segundo|de acordo com)\s+(as\s+)?fontes?\b.*:$|^(resumo|observa[cç][aã]o|em s[ií]ntese|fontes?)\s*:?$/i;
 

@@ -31,6 +31,12 @@ describe('HttpReranker', () => {
     expect(r.map((x) => x.score)).toEqual([0.9, 0.1]);
   });
 
+  it('formato Voyage ({data: [...]}) é aceito', async () => {
+    stubResponse({ data: [{ index: 1, relevance_score: 0.2 }, { index: 0, relevance_score: 0.8 }] });
+    const r = await new HttpReranker('http://x/rerank', 'm').rerank('q', docs);
+    expect(r.map((x) => x.score)).toEqual([0.8, 0.2]);
+  });
+
   it('auto: detecta logits pela faixa de valores', async () => {
     stubResponse([
       { index: 0, score: 3.5 },
@@ -48,5 +54,12 @@ describe('HttpReranker', () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({ query: 'pergunta', texts: ['trecho a', 'trecho b'], documents: ['trecho a', 'trecho b'], model: 'bge' });
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer k');
+  });
+
+  it('Voyage recebe só query e documents', async () => {
+    const f = stubResponse({ data: [{ index: 0, relevance_score: 0.7 }, { index: 1, relevance_score: 0.2 }] });
+    await new HttpReranker('https://api.voyageai.com/v1/rerank', 'rerank-3', 'k').rerank('q', docs);
+    const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ model: 'rerank-3', query: 'q', documents: ['trecho a', 'trecho b'] });
   });
 });

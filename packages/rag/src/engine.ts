@@ -309,7 +309,7 @@ export class RagEngine {
 
     // 4. Verificação de citações (sempre) e relatório de grounding (configurável)
     const answerType = classifyAnswer(content, context.sources);
-    if (cache && cacheKey && !cached && content && answerType !== 'error') {
+    if (cache && cacheKey && content && answerType !== 'error') {
       await cache.set(cacheKey, content).catch((err) => this.cacheError(err, 'set'));
     }
     yield { type: 'status', stage: 'verifying' };

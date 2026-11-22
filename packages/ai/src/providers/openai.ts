@@ -20,15 +20,16 @@ export interface OpenAIOptions {
   onUsage?: UsageSink;
   retry?: Partial<RetryOptions>;
   providerName?: string;
+  reasoningEffort?: string;
 }
 
 function headers(apiKey?: string): Record<string, string> {
-  const h: Record<string, string> = { 'content-type': 'application/json' };
+  const h: Record<string, string> = { 'content-type': 'application/json', 'user-agent': 'rag-institucional' };
   if (apiKey) h.authorization = `Bearer ${apiKey}`;
   return h;
 }
 
-function buildBody(req: ChatRequest, stream: boolean): Record<string, unknown> {
+function buildBody(req: ChatRequest, stream: boolean, reasoningEffort?: string): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: req.model,
     messages: req.messages,
@@ -36,6 +37,7 @@ function buildBody(req: ChatRequest, stream: boolean): Record<string, unknown> {
     stream,
   };
   if (req.maxTokens) body.max_completion_tokens = req.maxTokens;
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
   if (stream) body.stream_options = { include_usage: true };
   if (req.jsonSchema) {
     body.response_format = {
@@ -71,7 +73,7 @@ export class OpenAIChatProvider implements ChatProvider {
     try {
       const res = await fetchWithRetry(
         `${this.opts.baseUrl}/chat/completions`,
-        { method: 'POST', headers: headers(this.opts.apiKey), body: JSON.stringify(buildBody(req, false)) },
+        { method: 'POST', headers: headers(this.opts.apiKey), body: JSON.stringify(buildBody(req, false, this.opts.reasoningEffort)) },
         { ...this.opts.retry, timeoutMs: this.opts.timeoutMs, signal: req.signal },
       );
       const json = (await res.json()) as {
@@ -106,7 +108,7 @@ export class OpenAIChatProvider implements ChatProvider {
     try {
       const res = await fetchWithRetry(
         `${this.opts.baseUrl}/chat/completions`,
-        { method: 'POST', headers: headers(this.opts.apiKey), body: JSON.stringify(buildBody(req, true)) },
+        { method: 'POST', headers: headers(this.opts.apiKey), body: JSON.stringify(buildBody(req, true, this.opts.reasoningEffort)) },
         { ...this.opts.retry, timeoutMs: this.opts.timeoutMs, signal: req.signal },
       );
       for await (const data of readSseEvents(res.body!, req.signal)) {
@@ -159,8 +161,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   async embed(texts: string[], o: { signal?: AbortSignal; operation?: string } = {}): Promise<EmbeddingResult> {
     await this.limiter.acquire();
     const started = performance.now();
-    const body: Record<string, unknown> = { model: this.model, input: texts, encoding_format: 'float' };
-    if (this.model.startsWith('text-embedding-3')) body.dimensions = this.dimensions;
+    const body: Record<string, unknown> = { model: this.model, input: texts, encoding_format: 'float', dimensions: this.dimensions };
     try {
       const res = await fetchWithRetry(
         `${this.opts.baseUrl}/embeddings`,

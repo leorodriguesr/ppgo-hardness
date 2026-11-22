@@ -25,6 +25,7 @@ export async function runEvaluationJob(runtime: Runtime, job: Job<EvaluationJobD
       runId,
       mode: mode ?? 'full',
       judgeModel: judgeModel ?? runtime.env.JUDGE_MODEL ?? undefined,
+      judgeChat: runtime.judgeChat,
       infraChecks: infraChecks ?? true,
       overrides: settingsOverrides,
       signal,

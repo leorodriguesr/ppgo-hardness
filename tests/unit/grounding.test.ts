@@ -27,6 +27,18 @@ describe('splitClaims', () => {
     expect(claims[0]!.text).not.toContain('Periodicidade');
   });
 
+  it('anexa a citação da linha "Citação:" à frase anterior', () => {
+    const claims = claimsOf('A comissão disciplinar será composta por três servidores efetivos.\n\nCitação: [Fonte 1, página 2]');
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.citations.map((c) => c.citation.sourceNumber)).toEqual([1]);
+    expect(claims[0]!.grouped).toBe(true);
+  });
+
+  it('anexa várias fontes listadas em "Fontes:"', () => {
+    const claims = claimsOf('O prazo de defesa é de cinco dias.\n\nFontes: [Fonte 1] [Fonte 2]');
+    expect(claims[0]!.citations.map((c) => c.citation.sourceNumber)).toEqual([1, 2]);
+  });
+
   it('não divide números com ponto de milhar', () => {
     expect(claimsOf('O limite é de 1.500 reais por mês [Fonte 1].')).toHaveLength(1);
   });

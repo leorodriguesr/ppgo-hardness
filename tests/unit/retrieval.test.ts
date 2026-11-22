@@ -2,6 +2,53 @@ import { dedupeCandidates, focusProcedureSection, introducedFacts, needsContext,
 import type { FusedCandidate } from '@rag/rag';
 import { describe, expect, it } from 'vitest';
 
+function fused(section: string, procedure: string, score: number): FusedCandidate {
+  return { sectionTitle: section, headingPath: ['POP', procedure, section], rerankScore: score, content: section } as FusedCandidate;
+}
+
+describe('focusProcedureSection', () => {
+  it('fica com o material do procedimento nomeado na pergunta', () => {
+    const pessoal = fused('MATERIAL NECESSÁRIO', '4.3.4 Revista Pessoal Minuciosa', 0.98);
+    const visual = fused('MATERIAL NECESSÁRIO', '4.3.1 Revista Visual', 0.94);
+    const passos = fused('SEQUÊNCIA DAS AÇÕES', '4.3.4 Revista Pessoal Minuciosa', 0.86);
+    expect(focusProcedureSection('quais os materiais da revista pessoal?', [pessoal, visual, passos])).toEqual([pessoal]);
+  });
+
+  it('não escolhe um procedimento quando a pergunta fala só do documento', () => {
+    const criancas = fused('MATERIAL NECESSÁRIO', '4.2.1 Crianças e Adolescentes', 0.99);
+    const celas = fused('MATERIAL NECESSÁRIO', '4.5 Revista em Estruturas Físicas das Celas', 0.9);
+    expect(focusProcedureSection('qual o material necessário no POP?', [criancas, celas])).toEqual([criancas, celas]);
+  });
+
+  it('pede a sequência das ações só do procedimento nomeado', () => {
+    const pessoal = fused('SEQUÊNCIA DAS AÇÕES', '4.3.4 Revista Pessoal Minuciosa', 0.9);
+    const celas = fused('SEQUÊNCIA DAS AÇÕES', '4.5 Revista em Estruturas Físicas das Celas', 0.95);
+    expect(focusProcedureSection('qual a sequência das ações da revista pessoal?', [celas, pessoal])).toEqual([pessoal]);
+  });
+
+  it('traz uma seção de cada procedimento quando a pergunta não nomeia nenhum', () => {
+    const pessoal = fused('AÇÕES CORRETIVAS', '4.3.4 Revista Pessoal Minuciosa', 0.99);
+    const outra = fused('AÇÕES CORRETIVAS', '4.3.4 Revista Pessoal Minuciosa', 0.98);
+    const celas = fused('AÇÕES CORRETIVAS', '4.5 Revista em Estruturas Físicas das Celas', 0.5);
+    expect(focusProcedureSection('quais as ações corretivas no POP?', [pessoal, outra, celas]).map((c) => c.headingPath[1])).toEqual([
+      '4.3.4 Revista Pessoal Minuciosa',
+      '4.5 Revista em Estruturas Físicas das Celas',
+      '4.3.4 Revista Pessoal Minuciosa',
+    ]);
+  });
+
+  it('não restringe uma pergunta que não pede uma seção', () => {
+    const passos = fused('SEQUÊNCIA DAS AÇÕES', '4.3.4 Revista Pessoal Minuciosa', 0.9);
+    expect(focusProcedureSection('como é feita a revista pessoal?', [passos])).toEqual([passos]);
+  });
+
+  it('não restringe pergunta sobre atividades que não são as críticas', () => {
+    const criticas = fused('ATIVIDADES CRÍTICAS', '4.3.4 Revista Pessoal Minuciosa', 0.9);
+    expect(focusProcedureSection('quais são as atividades do dia na unidade?', [criticas])).toEqual([criticas]);
+  });
+});
+
+
 function cand(chunkId: string, extra: Partial<Candidate> = {}): Candidate {
   return {
     chunkId,
@@ -12,24 +59,6 @@ function cand(chunkId: string, extra: Partial<Candidate> = {}): Candidate {
     ...extra,
   } as Candidate;
 }
-
-describe('focusProcedureSection', () => {
-  const chunk = (section: string, procedure: string, score: number): FusedCandidate =>
-    ({ sectionTitle: section, headingPath: ['POP', procedure, section], rerankScore: score, content: section }) as FusedCandidate;
-
-  it('fica com o material do procedimento mais bem avaliado', () => {
-    const pessoal = chunk('MATERIAL NECESSÁRIO', '4.3.4 Revista Pessoal Minuciosa', 0.98);
-    const visual = chunk('MATERIAL NECESSÁRIO', '4.3.1 Revista Visual', 0.94);
-    const passos = chunk('SEQUÊNCIA DAS AÇÕES', '4.3.4 Revista Pessoal Minuciosa', 0.86);
-    const out = focusProcedureSection('quais os materiais da revista pessoal?', [pessoal, visual, passos]);
-    expect(out).toEqual([pessoal]);
-  });
-
-  it('não restringe uma pergunta que não pede uma seção', () => {
-    const passos = chunk('SEQUÊNCIA DAS AÇÕES', '4.3.4 Revista Pessoal Minuciosa', 0.9);
-    expect(focusProcedureSection('como é feita a revista pessoal?', [passos])).toEqual([passos]);
-  });
-});
 
 describe('reciprocalRankFusion', () => {
   it('soma contribuições ponderadas e ordena pelo escore fundido', () => {

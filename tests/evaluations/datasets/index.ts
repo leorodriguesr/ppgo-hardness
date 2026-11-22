@@ -6,6 +6,7 @@
  * rótulos válidos entre estratégias de chunking diferentes.
  */
 import type { EvaluationCaseInput } from '@rag/database';
+import { REAL_DEV_CASES, REAL_VALIDATION_CASES } from './real';
 
 type Case = Omit<EvaluationCaseInput, 'history' | 'relevant' | 'requiredFacts' | 'forbidden' | 'tags'> & {
   history?: { role: 'user' | 'assistant'; content: string }[];
@@ -379,4 +380,6 @@ export const VALIDATION_CASES: Case[] = [
 export const DATASETS = {
   dev: { name: 'corpus-sintetico-dev', split: 'dev' as const, version: 1, description: 'Casos de desenvolvimento (iteração)', cases: DEV_CASES },
   validation: { name: 'corpus-sintetico-validacao', split: 'validation' as const, version: 1, description: 'Casos reservados para validação', cases: VALIDATION_CASES },
+  realDev: { name: 'documentos-reais-dev', split: 'dev' as const, version: 5, description: 'Casos dos documentos reais, para iterar', cases: REAL_DEV_CASES },
+  realValidation: { name: 'documentos-reais-validacao', split: 'validation' as const, version: 3, description: 'Casos dos documentos reais, só para medir', cases: REAL_VALIDATION_CASES },
 };

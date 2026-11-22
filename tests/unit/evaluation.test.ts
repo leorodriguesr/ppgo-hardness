@@ -1,5 +1,7 @@
 import {
+  behaviorPassed,
   citationScore,
+  hasContradictoryRefusal,
   factCoverage,
   faithfulnessScore,
   forbiddenHits,
@@ -47,6 +49,37 @@ describe('métricas de recuperação', () => {
   it('factCoverage aceita formas alternativas e forbiddenHits detecta termos proibidos', () => {
     expect(factCoverage('O prazo é de cinco dias úteis.', [['5 dias', 'cinco dias'], ['48 horas']])).toBe(0.5);
     expect(forbiddenHits('A senha do cofre é 1234', ['senha do cofre', 'código'])).toEqual(['senha do cofre']);
+  });
+});
+
+describe('comportamento da resposta', () => {
+  const base = { expectedBehavior: 'answer' as const, requiredFacts: [['celular']], forbidden: [] as string[], tags: [] as string[] };
+
+  it('reprova resposta factual sem citação válida', () => {
+    expect(
+      behaviorPassed(base, {
+        content: 'Os custodiados não podem usar aparelho celular nas áreas de custódia.',
+        answerType: 'answered',
+        citations: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('reprova resposta que afirma um fato e cola a mensagem de falta de evidência', () => {
+    const content =
+      'Os custodiados não podem usar aparelho celular nas áreas de custódia.\n\n[Não encontrei informações suficientes nos documentos disponíveis para responder com segurança a essa pergunta.]';
+    expect(hasContradictoryRefusal(content)).toBe(true);
+    expect(behaviorPassed(base, { content, answerType: 'answered', citations: [{ documentId: 'a', valid: true }] })).toBe(false);
+  });
+
+  it('aceita resposta citada que cobre o fato exigido', () => {
+    expect(
+      behaviorPassed(base, {
+        content: 'Os custodiados não podem usar aparelho celular [Fonte 1].',
+        answerType: 'answered',
+        citations: [{ documentId: 'a', valid: true }],
+      }),
+    ).toBe(true);
   });
 });
 

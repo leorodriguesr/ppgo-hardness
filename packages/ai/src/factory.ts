@@ -11,6 +11,7 @@ export interface AiEnv {
   OLLAMA_BASE_URL: string;
   OLLAMA_NUM_CTX: number;
   LLM_REQUEST_TIMEOUT_MS: number;
+  LLM_REASONING_EFFORT?: string;
   EMBEDDING_MAX_RPM: number;
   RERANK_PROVIDER: 'none' | 'llm' | 'http';
   RERANK_MODEL: string;
@@ -25,6 +26,7 @@ export function createChatProvider(env: AiEnv, onUsage?: UsageSink): ChatProvide
       baseUrl: env.OPENAI_BASE_URL,
       apiKey: env.OPENAI_API_KEY,
       timeoutMs: env.LLM_REQUEST_TIMEOUT_MS,
+      reasoningEffort: env.LLM_REASONING_EFFORT,
       onUsage,
     });
   }
@@ -34,6 +36,24 @@ export function createChatProvider(env: AiEnv, onUsage?: UsageSink): ChatProvide
     timeoutMs: env.LLM_REQUEST_TIMEOUT_MS,
     onUsage,
   });
+}
+
+/** Provedor do juiz das avaliações; sem `JUDGE_*` definidos, reutiliza o provedor principal. */
+export function createJudgeProvider(
+  env: AiEnv & { JUDGE_PROVIDER?: 'openai' | 'ollama'; JUDGE_BASE_URL?: string; JUDGE_API_KEY?: string },
+  onUsage?: UsageSink,
+): ChatProvider | undefined {
+  if (!env.JUDGE_PROVIDER && !env.JUDGE_BASE_URL) return undefined;
+  return createChatProvider(
+    {
+      ...env,
+      LLM_PROVIDER: env.JUDGE_PROVIDER ?? env.LLM_PROVIDER,
+      OPENAI_BASE_URL: env.JUDGE_BASE_URL ?? env.OPENAI_BASE_URL,
+      OPENAI_API_KEY: env.JUDGE_API_KEY ?? env.OPENAI_API_KEY,
+      LLM_REASONING_EFFORT: undefined,
+    },
+    onUsage,
+  );
 }
 
 export function createEmbeddingProvider(

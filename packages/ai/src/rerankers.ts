@@ -87,7 +87,7 @@ export class LlmReranker implements Reranker {
 
 /**
  * Reranker via HTTP compatível com APIs de cross-encoder
- * (Cohere/Jina: {results:[{index, relevance_score}]}; TEI/llama.cpp: [{index, score}]).
+ * (Cohere/Jina: {results:[{index, relevance_score}]}; Voyage: {data:[...]}; TEI/llama.cpp: [{index, score}]).
  * `scoreType`: 'logit' aplica sigmoide (llama.cpp devolve logits brutos); 'probability' usa o valor
  * como veio; 'auto' aplica sigmoide se algum valor estiver fora de [0, 1].
  */
@@ -106,24 +106,29 @@ export class HttpReranker implements Reranker {
 
   async rerank(query: string, docs: RerankDocument[], opts: { signal?: AbortSignal } = {}): Promise<RerankResult[]> {
     if (docs.length === 0) return [];
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    const headers: Record<string, string> = { 'content-type': 'application/json', 'user-agent': 'rag-institucional' };
     if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
     const texts = docs.map((d) => d.text);
+    // A Voyage rejeita campos que não usa. TEI e o llama.cpp aceitam texts junto com documents.
+    const strict = this.url.includes('voyageai.com');
+    const body = strict
+      ? { model: this.model, query, documents: texts }
+      : { model: this.model, query, documents: texts, texts, top_n: docs.length };
     const res = await fetchWithRetry(
       this.url,
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model: this.model, query, documents: texts, texts, top_n: docs.length }),
+        body: JSON.stringify(body),
       },
       { timeoutMs: this.timeoutMs, signal: opts.signal, retries: 2 },
     );
     const json = (await res.json()) as
-      | { results: { index: number; relevance_score: number }[] }
+      | { results?: { index: number; relevance_score: number }[]; data?: { index: number; relevance_score: number }[] }
       | { index: number; score: number }[];
     const raw = Array.isArray(json)
       ? json.map((r) => ({ index: r.index, score: r.score }))
-      : json.results.map((r) => ({ index: r.index, score: r.relevance_score }));
+      : (json.results ?? json.data ?? []).map((r) => ({ index: r.index, score: r.relevance_score }));
     const scores = new Map(raw.map((r) => [r.index, r.score]));
     const values = [...scores.values()];
     const needsSigmoid = this.scoreType === 'logit' || (this.scoreType === 'auto' && values.some((v) => v < 0 || v > 1));

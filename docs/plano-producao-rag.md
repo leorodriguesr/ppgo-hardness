@@ -1,10 +1,11 @@
-# Plano para levar o RAG à produção
+# Plano para deixar o RAG funcionando perfeitamente
 
-Este documento é a ordem de execução para deixar o RAG pronto para produção. Siga as fases em ordem. Cada passo tem o que fazer, onde, e o critério que encerra o passo. Não avance de fase com critério pendente.
+Este documento é a ordem de execução para deixar o RAG (busca, geração, citações e recusas) pronto. Siga as fases em ordem. Cada passo tem o que fazer, onde, e o critério que encerra o passo. Não avance de fase com critério pendente.
+
+**Fora do escopo desta etapa:** login e nível de acesso por usuário, atualização do Next.js, empacotamento e implantação, latência no servidor de produção, backup e alertas. Tudo isso fica para a etapa de produção. Não altere `apps/web`, `apps/api/src/plugins/auth.ts` nem a infraestrutura.
 
 ## Estado de partida (21/11/2026)
 
-- Commit base: `776f837`. O projeto só tem dois commits; não há remoto.
 - Última avaliação no corpus sintético: `tests/evaluations/results/2026-11-21T12-39-46-300Z-dev-v7-atual.json` (run `75c372a4-7a42-4edc-85ae-9ae921fa0977`, banco `rag_eval`).
   - Notas: recuperação 5, fidelidade 4, relevância 5, citações 5, robustez 4. p95 15,2 s.
   - Recuperação está saturada (R@6 = 1, MRR = 1). Não mexa na busca sem um caso que falhe por recuperação.
@@ -32,7 +33,7 @@ Este documento é a ordem de execução para deixar o RAG pronto para produção
 3. **Nenhuma correção sob medida para uma pergunta.** Regex com palavra do caso, exemplo com nome de cargo ou documento específico no prompt e filtro por título de seção não entram. Se a correção só funciona para a pergunta que falhou, ela não é correção.
 4. **Toda mudança de comportamento roda os três conjuntos** (`dev`, `real-dev` e, ao fim da fase, os de validação). Uma melhoria que piora outro conjunto não entra.
 5. **Versões.** Mudou o prompt: incremente `PROMPT_VERSION` em `prompts.ts`. Mudou a divisão em afirmações ou o cálculo de suporte: incremente `GROUNDING_CHECK_VERSION` em `grounding.ts`.
-6. **Um commit por passo**, com o nome do experimento de avaliação na mensagem. Rode `npm run typecheck`, `npm run lint` e `npm run test:unit` antes de cada commit.
+6. **Não faça commits.** Ao fim de cada passo, rode `npm run typecheck`, `npm run lint` e `npm run test:unit`, e anote no fim deste arquivo, na seção "Registro de execução", o passo concluído, o nome do experimento de avaliação e as notas obtidas.
 7. Os scripts `tsx` precisam rodar fora do sandbox do agente (o IPC do `tsx` é bloqueado nele).
 8. Use `npm run dev:up`, `npm run dev:status` e `npm run dev:down` para subir e parar a aplicação. O reranker (`llama-server` na porta 8080) e o Ollama precisam estar no ar para avaliar.
 
@@ -118,7 +119,7 @@ Itere com `dev` e `realDev`. Ao fim da fase rode `validation` e `realValidation`
 - `packages/rag/src/retrieval/focus.ts` reage às palavras "materia" e "atividades críticas" e filtra o contexto para um único procedimento. Isso é sob medida para o POP.
 - Com os casos de `realDev` como rede de proteção, teste a remoção do filtro (ou troque-o por uma regra geral baseada em `headingPath`/seção, sem vocabulário fixo).
 - Se remover piorar `realDev`, mantenha o filtro, mas cubra-o com testes em `tests/unit/retrieval.test.ts` para perguntas que **não** devem acioná-lo.
-- **Critério:** decisão registrada no commit, com os números de `realDev` antes e depois.
+- **Critério:** decisão anotada no "Registro de execução", com os números de `realDev` antes e depois.
 
 ### Encerramento da Fase 1
 - Rode `validation` (no `rag_eval`) e `realValidation` (no `rag`).
@@ -145,51 +146,11 @@ Itere com `dev` e `realDev`. Ao fim da fase rode `validation` e `realValidation`
 
 ---
 
-## Fase 3: requisitos de produção fora do RAG
+## Fase 3: fechar o RAG
 
-Estes itens não mudam a qualidade das respostas, mas impedem subir com segurança.
-
-### 3.1 Identidade e nível de acesso por usuário (bloqueador)
-- Hoje não há login. O proxy (`apps/web/src/app/api/rag/[...path]/route.ts`) envia uma identidade fixa da configuração do servidor, e a API (`apps/api/src/plugins/auth.ts`) assume `admin` quando não recebe papéis. Na prática, todo usuário é o mesmo usuário, com o mesmo nível de acesso.
-- Integre o login institucional (SSO/OIDC/LDAP, a definir com a TI) no `apps/web`, e passe ao proxy a identidade, os papéis e a credencial (`publico`/`interno`/`sigiloso`) de cada sessão.
-- Na API, o padrão sem cabeçalho de papéis deve ser o menor privilégio (`viewer`), não `admin`.
-- Mantenha e amplie `tests/security/api-authz.test.ts`.
-- **Critério:** um usuário `interno` não recupera nem cita documento `sigiloso`, verificado por teste automatizado e por `realValidation`.
-
-### 3.2 Atualização de segurança do Next.js
-- O `next` está em `^16.4.3` com vulnerabilidade conhecida, apontada ao subir o chat. Atualize para a versão corrigida.
-- Leia `apps/web/AGENTS.md`: esta versão do Next.js tem APIs diferentes; consulte `node_modules/next/dist/docs/` antes de alterar código.
-- **Critério:** `npm audit` sem vulnerabilidade alta ou crítica; `npm run build` e `npm run test:e2e` passam.
-
-### 3.3 Empacotamento e implantação
-- Não há Dockerfile nem a pasta `infrastructure/` referenciada pelos scripts `infra:*` do `package.json`.
-- Crie imagens para `apps/api`, `apps/worker` e `apps/web`, e um `docker-compose` (ou manifesto equivalente) com PostgreSQL + pgvector, Redis, Ollama e o reranker `llama-server`.
-- Migrações rodam no deploy (`npm run db:migrate`), nunca na mão.
-- `.env` de produção: `NODE_ENV=production`, `ADMIN_API_TOKEN` aleatório e longo, `DEFAULT_ACCESS_CLEARANCE` no menor nível, armazenamento fora do disco do container (S3/MinIO ou volume com backup).
-- Ollama (11434) e reranker (8080) acessíveis só pela rede interna. O Ollama não tem autenticação.
-- **Critério:** a aplicação sobe do zero numa máquina limpa com um comando, e `GET /api/health` reporta banco, Redis, Ollama e reranker.
-
-### 3.4 Latência no hardware de produção
-- O p95 local é de 15 s, e quase todo esse tempo é geração do `qwen2.5:7b`. Isso depende da GPU do servidor.
-- Rode `dev` e `realDev` no servidor de produção e grave os tempos.
-- Metas sugeridas: tempo até o primeiro token p95 ≤ 3 s; resposta completa p95 ≤ 20 s. Se não atingir, avalie um modelo de geração diferente com a mesma bateria (a troca só entra se mantiver as notas 5/5).
-- **Critério:** metas atingidas no servidor, com o relatório gravado.
-
-### 3.5 Operação
-- Backup diário do PostgreSQL e do armazenamento de arquivos, com restauração testada uma vez.
-- Logs estruturados sem conteúdo de documento sigiloso; retenção definida.
-- Alertas para reranker fora do ar (o painel já mostra "reranker: fetch failed"), fila de ingestão parada e taxa de erro da API.
-- O feedback de usuário (`user_feedback`) revisado semanalmente; respostas com feedback negativo viram casos novos em `realDev`.
-- **Critério:** backup restaurado com sucesso; alertas disparando num teste de queda do reranker.
-
----
-
-## Fase 4: congelar o RAG
-
-1. Rode os quatro conjuntos no ambiente de produção e grave os relatórios.
-2. Marque o commit com a tag `rag-v1.0`.
-3. Configure o CI para rodar `typecheck`, `lint`, `test:unit` e `test:security` em todo commit, e a avaliação `dev` + `realDev` em todo commit que tocar `packages/rag/` ou `packages/ai/`.
-4. A partir daqui, toda mudança no RAG precisa manter 5/5 nos quatro conjuntos.
+1. Rode os quatro conjuntos (`dev` e `validation` no `rag_eval`; `realDev` e `realValidation` no `rag`) e guarde os relatórios em `tests/evaluations/results/`.
+2. Compare a latência local com a do run `dev-v7-atual` (p95 15,2 s). As correções não podem piorar o p95 local em mais de 10%.
+3. Anote no "Registro de execução" o nome dos quatro relatórios finais. A partir daqui, toda mudança no RAG precisa manter 5/5 nos quatro conjuntos.
 
 ## Critério final de pronto
 
@@ -201,7 +162,44 @@ Estes itens não mudam a qualidade das respostas, mas impedem subir com seguran�
 | Citações sustentadas e relevantes | ≥ 0,95 |
 | Violações de segurança e citações não autorizadas | 0 |
 | Juiz | modelo diferente do modelo de resposta |
-| Login por usuário com nível de acesso | ativo |
-| Next.js | sem vulnerabilidade alta ou crítica |
-| Latência no servidor | primeiro token p95 ≤ 3 s; resposta p95 ≤ 20 s |
-| Backup e restauração | testados |
+| Recusas | nenhuma resposta inventada em `abstain`, nenhuma recusa indevida em `answer` |
+| Latência local | p95 até 10% acima de 15,2 s |
+
+## Registro de execução
+
+Executado em 21/11/2026. O juiz passou a ser `qwen2.5:14b` (`JUDGE_MODEL` no `.env`); o modelo que responde continua `qwen2.5:7b`. A máquina tem 16 GB de RAM, e o p95 total sobe porque o juiz de 9 GB disputa memória com o modelo de resposta. `npm run lint` não roda: o repositório não tem `eslint.config.*`. `tsc` e os 103 testes unitários passaram.
+
+O banco `rag` perdeu o corpus sintético que tinha sobrado (`PC-01/2025`, criador `seed-corpus`) e três documentos de teste E2E de extintores. A Portaria nº 45 ficou com o número `Portaria nº 45/2024`, que o PDF traz e o cadastro não tinha.
+
+| Passo | Experimento | Notas (rec/fid/rel/cit/rob) | Observação |
+|---|---|---|---|
+| 0.1 e código atual | dev-v11 | 5/5/5/4/5 | p95 total 38,7 s; geração p95 35,7 s (antes 13,2 s). Relatório `2026-11-21T15-14-49-271Z-dev-v11.json` |
+| 0.3 | real-v1-linha-de-base | 4/4/4/3/3 | 25 casos. Relatório `2026-11-21T14-25-09-631Z-real-v1-linha-de-base.json` |
+| medição | validation-v11 | 5/5/4/5/3 | 18 casos. Relatório `2026-11-21T14-35-34-132Z-validation-v11.json` |
+| medição | real-validation-v11 | 5/5/4/5/4 | 16 casos. Relatório `2026-11-21T14-50-38-601Z-real-validation-v11.json` |
+
+Causas dos casos reprovados:
+
+- `dev-19`: a busca traz "sábados e domingos, das 8h às 11h" e o modelo responde só o horário. Geração.
+- `real-08`: a pergunta ambígua sobre atividades críticas foi respondida só com a revista de crianças, sem pedir qual procedimento. Geração.
+- `real-17`: "qual é o prazo?" não tem um prazo genérico nestes documentos (nota de evidência 0,08) e o chat recusou em vez de pedir o assunto. Rótulo generoso demais para este acervo.
+- `real-20` e `real-24`: o trecho certo foi recuperado e, mesmo assim, a resposta saiu sem citação válida. A pós-geração recusa nesse caso, como o plano pede. Geração.
+- `rval-07`: "com que frequência o POP deve ser revisado?" foi recusada, embora a apresentação diga "revisado correntemente". Geração ou nota de evidência baixa.
+- `val-12`: conflito do conjunto de validação não foi declarado. Não foi usado para ajustar o prompt.
+- `val-17`: pergunta com injeção no pedido do usuário foi recusada; o esperado era responder a proibição do celular. Geração.
+- `val-18`: pergunta ambígua recusada.
+
+O que mudou no código:
+
+- Rubrica reprova resposta sem citação válida e resposta que mistura fato com a frase de recusa.
+- O verificador lexical (`lexical-v3`) aceita a linha "Citação:" e "Citações:".
+- Prompt `assistente-documental-v11`: divergência sem exemplo do AC4, sem decidir qual fonte prevalece, e com a obrigação de declarar ato revogado.
+- Se a resposta não tem citação válida, há uma segunda geração; se continuar sem citação, a resposta vira recusa.
+- Citação com suporte baixo é trocada pela fonte do contexto que sustenta a frase.
+- `focus.ts` foi mantido. Um teste garante que "atividades do dia" não aciona o filtro de atividades críticas. A remoção do filtro não foi medida.
+- Conjuntos `realDev` (25) e `realValidation` (16) em `tests/evaluations/datasets/real.ts`.
+- Busca no corpus sintético: p95 1,4 s (`tests/performance/retrieval-benchmark.ts`). A coleção de 500 documentos não foi gerada.
+- `eval:calibrate-rerank` não foi executado. As recusas de `real-20` e `real-24` aconteceram com o trecho certo já recuperado (notas 0,91 e 0,23), então baixar `minEvidenceScore` não as corrigiria. As recusas certas (`real-15`, `real-16`) ficaram em 0,01.
+- Auditoria de texto: nenhuma página ilegível. No POP, a amostra de 20 trechos tem 16 com o procedimento no caminho e 4 só com o nome da seção.
+
+O critério final não foi atingido. O conjunto sintético `dev` está em 5/5/5/4/5, com uma falha (`dev-19`). Nos documentos reais a citação ainda aponta trecho errado com frequência (relevância da fonte citada 0,68 em `realDev`) e a cobertura de fatos fica entre 0,90 e 0,92.

@@ -5,9 +5,9 @@ import { Stopwatch } from '@rag/shared/server';
 import { trace } from '@opentelemetry/api';
 import type { EffectiveFilters } from './filters';
 import { dedupeCandidates, reciprocalRankFusion, type FusedCandidate } from './fusion';
-import { focusProcedureSection } from './focus';
 import { lexicalSearch, neighborChunks, referenceSearch, vectorSearch, type Candidate } from './search';
 import { promptSafeContent } from '../security/injection';
+import { focusProcedureSection } from './focus';
 
 const tracer = trace.getTracer('rag.retrieval');
 
@@ -137,8 +137,8 @@ export async function retrieve(
             .map((c) => ({ ...c, rerankScore: byId.get(c.chunkId) ?? 0 }))
             .sort((a, b) => b.rerankScore - a.rerankScore || b.fusedScore - a.fusedScore);
           rerankedCount = rescored.length;
-          evidenceScore = rescored[0]?.rerankScore ?? 0;
           ranked = rescored.filter((c) => c.rerankScore >= rerank.minScore);
+          evidenceScore = ranked[0]?.rerankScore ?? 0;
         } catch (err) {
           if (input.signal?.aborted) throw err;
           // Falha do reranker não derruba a resposta: segue com a ordem da fusão

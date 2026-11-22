@@ -1,6 +1,6 @@
 import type { ChatProvider, Reranker } from '@rag/ai';
 import { createRun, finishRun, insertResult, listCases, type EvaluationCaseRow } from '@rag/database';
-import { canAccess, ragSettingsSchema, type AccessLevel, type Principal, type RagSettings } from '@rag/shared';
+import { canAccess, NO_EVIDENCE_MESSAGE, ragSettingsSchema, type AccessLevel, type Principal, type RagSettings } from '@rag/shared';
 import { percentile } from '@rag/shared/server';
 import { RagEngine, type EngineDeps, type EngineResult } from '../engine';
 import { GROUNDING_CHECK_VERSION } from '../generation/grounding';
@@ -31,6 +31,8 @@ export interface EvaluationOptions {
   /** Sobrescritas parciais das configurações RAG (aplicadas sobre as configurações salvas). */
   overrides?: Record<string, unknown>;
   judgeModel?: string;
+  /** Provedor do juiz; sem ele, o juiz usa o mesmo provedor das respostas. */
+  judgeChat?: ChatProvider;
   /** Executa verificações de falha de infraestrutura (reranker indisponível, LLM indisponível). */
   infraChecks?: boolean;
   runId?: string;
@@ -78,6 +80,23 @@ export function deepMerge<T>(base: T, patch: unknown): T {
 const clearanceOf = (tags: string[]): AccessLevel =>
   (tags.find((t) => t.startsWith('clearance:'))?.slice('clearance:'.length) as AccessLevel | undefined) ?? 'interno';
 
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Resposta que afirma um fato e, no mesmo texto, cola a mensagem de recusa por falta de evidência. */
+export function hasContradictoryRefusal(content: string): boolean {
+  const text = fold(content);
+  const marker = fold(NO_EVIDENCE_MESSAGE).slice(0, 48);
+  if (!text.includes(marker) && !text.includes('nao encontrei informacoes suficientes')) return false;
+  const rest = text.replaceAll(fold(NO_EVIDENCE_MESSAGE), '').replace(/[\[\]]/g, '').trim();
+  return rest.length > 40;
+}
+
 function principalFor(c: EvaluationCaseRow): Principal {
   return { id: 'avaliacao', displayName: 'Avaliação automática', roles: ['viewer'], clearance: clearanceOf(c.tags), authenticated: false };
 }
@@ -93,14 +112,20 @@ export function behaviorPassed(
   const coverage = factCoverage(r.content, facts);
   const text = normalizeText(r.content);
   switch (c.expectedBehavior) {
-    case 'answer':
+    case 'answer': {
+      if (hasContradictoryRefusal(r.content)) return false;
+      const validCitations = (r.citations ?? []).filter((x) => x.valid).length;
       if (c.tags?.includes('ambiguous')) {
         // Pergunta ambígua: pedir esclarecimento ou apresentar as alternativas com fontes distintas
         const asks = /especifi|esclare|poderia (informar|detalhar|indicar)|a qual .{0,40}(refere|deseja)|qual (situacao|contexto|procedimento)|depende d[oa]/.test(text);
-        const distinctDocs = new Set((r.citations ?? []).filter((x) => x.valid).map((x) => x.documentId)).size;
-        return asks || distinctDocs >= 2;
+        const cited = (r.citations ?? []).filter((x) => x.valid);
+        const distinctDocs = new Set(cited.map((x) => x.documentId)).size;
+        if (asks) return true;
+        return cited.length >= 2 || distinctDocs >= 2;
       }
+      if (r.answerType === 'answered' && validCitations === 0) return false;
       return r.answerType !== 'insufficient_evidence' && coverage >= 0.5;
+    }
     case 'abstain':
       return r.answerType === 'insufficient_evidence' || /nao encontrei|nao ha informac|nao constam?|insuficiente/.test(text);
     case 'conflict':
@@ -247,7 +272,7 @@ export async function runEvaluation(deps: EngineDeps, opts: EvaluationOptions): 
           if (result.content) {
             try {
               judge = await judgeAnswer({
-                provider: deps.chat,
+                provider: opts.judgeChat ?? deps.chat,
                 model: judgeModel,
                 question: c.question,
                 answer: result.content,
@@ -255,6 +280,7 @@ export async function runEvaluation(deps: EngineDeps, opts: EvaluationOptions): 
                 sources: result.contextSources.map((s, idx) => ({
                   n: idx + 1,
                   label: s.documentNumber ? `${s.documentNumber} — ${s.documentTitle}` : s.documentTitle,
+                  section: [...s.candidate.headingPath, s.candidate.structuralRef].filter(Boolean).join(' › '),
                   content: promptSafeContent(s.candidate.content),
                 })),
                 signal: opts.signal,

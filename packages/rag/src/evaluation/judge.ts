@@ -37,7 +37,7 @@ export async function judgeAnswer(input: {
   question: string;
   answer: string;
   referenceAnswer: string | null;
-  sources: { n: number; label: string; content: string }[];
+  sources: { n: number; label: string; section?: string; content: string }[];
   signal?: AbortSignal;
 }): Promise<JudgeVerdict> {
   return (await judgeRaw(input)).data;
@@ -45,7 +45,12 @@ export async function judgeAnswer(input: {
 
 async function judgeRaw(input: Parameters<typeof judgeAnswer>[0]) {
   const sources = input.sources.length
-    ? input.sources.map((s) => `<fonte id="${s.n}" documento="${s.label.replace(/"/g, "'")}">\n${s.content}\n</fonte>`).join('\n')
+    ? input.sources
+        .map((s) => {
+          const section = s.section ? ` secao="${s.section.replace(/"/g, "'")}"` : '';
+          return `<fonte id="${s.n}" documento="${s.label.replace(/"/g, "'")}"${section}>\n${s.content}\n</fonte>`;
+        })
+        .join('\n')
     : '(nenhuma fonte foi fornecida ao assistente)';
   const user = `PERGUNTA:\n${input.question}\n\nFONTES FORNECIDAS AO ASSISTENTE:\n${sources}\n\nRESPOSTA DE REFERÊNCIA (gabarito humano):\n${
     input.referenceAnswer ?? '(não informada)'

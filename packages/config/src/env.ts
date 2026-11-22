@@ -45,7 +45,11 @@ export const envSchema = z
     OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).max(131_072).default(8192),
     CHAT_MODEL: z.string().default('qwen2.5:7b'),
     UTILITY_MODEL: z.string().default('qwen2.5:3b'),
+    LLM_REASONING_EFFORT: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
     JUDGE_MODEL: z.string().default('qwen2.5:7b'),
+    JUDGE_PROVIDER: z.enum(['openai', 'ollama']).optional(),
+    JUDGE_BASE_URL: z.string().url().optional(),
+    JUDGE_API_KEY: z.string().optional(),
     LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180_000),
 
     EMBEDDING_PROVIDER: z.enum(['openai', 'ollama']).default('ollama'),

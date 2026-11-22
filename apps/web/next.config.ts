@@ -12,6 +12,9 @@ const config: NextConfig = {
   poweredByHeader: false,
   output: 'standalone',
   transpilePackages: ['@rag/shared'],
+  experimental: {
+    agentUpgrade: 'security',
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

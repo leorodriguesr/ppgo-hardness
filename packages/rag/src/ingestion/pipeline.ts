@@ -28,8 +28,53 @@ import { isUnreadableText, pageText, usableChars, type ExtractedPage } from './e
 import { validateUpload } from './file-validation';
 import { cleanLine, normalizePages } from './normalization';
 import type { OcrEngine } from './ocr';
+import { PdftotextFailed, readPdfWithPdftotext } from './pdftotext';
 import { buildUnits, parseElements } from './structure';
+import { adoptAlternativePage, hasCorruptCharacters } from './text-quality';
 import { plainTextToLines } from './extractors/text';
+
+/**
+ * Relê com pdftotext as páginas com caractere quebrado ou camada ilegível.
+ * Caractere nulo ou de substituição que a segunda leitura não corrige impede a indexação.
+ * Camada ilegível que o pdftotext não melhora segue para o OCR.
+ */
+async function repairBrokenPages(
+  pages: ExtractedPage[],
+  data: Buffer,
+  signal?: AbortSignal,
+): Promise<{ pages: ExtractedPage[]; replaced: number[]; corruptLeft: number[]; unavailable: boolean; failed: boolean }> {
+  const needsSecondRead = pages.some((p) => hasCorruptCharacters(pageText(p)) || p.unreadableTextLayer);
+  if (!needsSecondRead) return { pages, replaced: [], corruptLeft: [], unavailable: false, failed: false };
+
+  let alternatives: string[] | null = null;
+  let failed = false;
+  try {
+    alternatives = await readPdfWithPdftotext(data, signal);
+  } catch (err) {
+    if (!(err instanceof PdftotextFailed)) throw err;
+    failed = true;
+  }
+
+  const replaced: number[] = [];
+  const corruptLeft: number[] = [];
+  if (!alternatives) {
+    for (const p of pages) {
+      if (hasCorruptCharacters(pageText(p))) corruptLeft.push(p.pageNumber);
+    }
+    return { pages, replaced, corruptLeft, unavailable: !failed, failed };
+  }
+
+  const readings = alternatives;
+  const next = pages.map((p) => {
+    const corrupt = hasCorruptCharacters(pageText(p));
+    if (!corrupt && !p.unreadableTextLayer) return p;
+    const result = adoptAlternativePage(p, readings[p.pageNumber - 1]);
+    if (result.adopted) replaced.push(p.pageNumber);
+    else if (corrupt) corruptLeft.push(p.pageNumber);
+    return result.page;
+  });
+  return { pages: next, replaced, corruptLeft, unavailable: false, failed: false };
+}
 
 /** Falha que não deve ser repetida (arquivo inválido, sem texto etc.). */
 export class PermanentIngestionError extends Error {
@@ -126,6 +171,31 @@ export class IngestionPipeline {
       }
       extracted.warnings.forEach((w) => qualityFlags.add(w));
       let pages = extracted.pages;
+      if (extracted.format === 'pdf') {
+        const repair = await repairBrokenPages(pages, data, input.signal);
+        pages = repair.pages;
+        if (repair.replaced.length) {
+          qualityFlags.add('leitura_alternativa');
+          await addProcessingEvent(
+            db,
+            ids,
+            'extracting',
+            `Páginas ${repair.replaced.join(', ')} relidas com pdftotext`,
+            'warn',
+            { pages: repair.replaced },
+          );
+        }
+        if (repair.corruptLeft.length) {
+          const reason = repair.unavailable
+            ? 'pdftotext não está instalado'
+            : repair.failed
+              ? 'A segunda leitura com pdftotext falhou'
+              : 'A segunda leitura também veio quebrada';
+          throw new PermanentIngestionError(
+            `Texto quebrado nas páginas ${repair.corruptLeft.join(', ')}. ${reason}. O documento não foi indexado.`,
+          );
+        }
+      }
       const unreadablePages = pages.filter((p) => p.unreadableTextLayer).map((p) => p.pageNumber);
       await addProcessingEvent(db, ids, 'extracting', `Extração concluída: ${pages.length} página(s)`, 'info', {
         pages: pages.length,

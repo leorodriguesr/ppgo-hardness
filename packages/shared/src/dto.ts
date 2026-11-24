@@ -1,3 +1,4 @@
+import type { CatalogStatus } from './catalog';
 import type {
   AccessLevel,
   AnswerType,
@@ -65,6 +66,67 @@ export interface DocumentDto {
 
 export interface DocumentDetailDto extends DocumentDto {
   versions: DocumentVersionDto[];
+}
+
+/** Linha da lista única: ato do Legisla ou documento enviado avulso. */
+export interface CatalogActDto {
+  origin: 'catalog' | 'upload';
+  source: 'legisla' | 'site' | null;
+  externalId: number | null;
+  revokedBy: string | null;
+  pageUrl: string | null;
+  fileKind: 'legisla' | 'pdf' | null;
+  title: string;
+  documentType: DocumentType;
+  documentNumber: string | null;
+  issuingBody: string | null;
+  publicationDate: string | null;
+  effectiveDate: string | null;
+  validityStatus: ValidityStatus;
+  accessLevel: AccessLevel;
+  description: string | null;
+  status: CatalogStatus;
+  errorMessage: string | null;
+  documentId: string | null;
+  isActive: boolean;
+  currentVersion: DocumentVersionDto | null;
+  amendments: number;
+  revocations: number;
+  /** Ato consolidado que já contém o texto deste, quando a ementa só trata dessa alteração. */
+  incorporatedInto: string | null;
+}
+
+export interface CatalogRelationAct {
+  source: 'legisla' | 'site';
+  externalId: number;
+  title: string;
+  documentNumber: string | null;
+  publicationDate: string | null;
+  validityStatus: ValidityStatus;
+  status: CatalogStatus;
+  documentId: string | null;
+  fileKind: 'legisla' | 'pdf' | null;
+  linkKind: 'alteracao' | 'revogacao';
+  incorporated: boolean;
+}
+
+export interface CatalogRelationsDto {
+  children: CatalogRelationAct[];
+  parents: CatalogRelationAct[];
+}
+
+export interface CatalogListDto extends Paginated<CatalogActDto> {
+  counts: Record<CatalogStatus, number>;
+  /** Atos escondidos da lista porque estão agrupados no ato principal. */
+  nested: number;
+}
+
+export interface CatalogSyncDto {
+  cursorAt: string | null;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  stats: { seen?: number; created?: number; updated?: number; revoked?: number; queued?: number };
 }
 
 export interface ChunkDto {

@@ -25,6 +25,7 @@ const queues: Queues = {
   ingestion: new Queue(QUEUES.ingestion, queueOpts),
   embeddings: new Queue(QUEUES.embeddings, queueOpts),
   evaluation: new Queue(QUEUES.evaluation, queueOpts),
+  catalogSync: new Queue('catalog-sync', queueOpts),
 };
 
 const app = await buildApp({ runtime, queues, redis });

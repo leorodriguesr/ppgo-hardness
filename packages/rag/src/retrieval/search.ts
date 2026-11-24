@@ -22,6 +22,8 @@ export interface Candidate {
   tokenCount: number;
   documentTitle: string;
   documentNumber: string | null;
+  /** Ementa cadastrada. Muitos artigos não repetem o assunto que ela traz. */
+  documentDescription: string | null;
   documentType: DocumentType;
   validityStatus: ValidityStatus;
   accessLevel: AccessLevel;
@@ -40,7 +42,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SELECT_COLUMNS = sql`
   c.id AS chunk_id, c.document_id, c.version_id, c.chunk_index, c.content, c.context_header, c.heading_path,
   c.section_title, c.structural_ref, c.page_start, c.page_end, c.flags, c.metadata, c.content_hash, c.token_count,
-  d.title AS document_title, d.document_number, d.document_type, d.validity_status, d.access_level,
+  d.title AS document_title, d.document_number, d.description AS document_description,
+  d.document_type, d.validity_status, d.access_level,
   d.publication_date::text AS publication_date, v.version_number, v.is_current`;
 
 type Row = Record<string, unknown>;
@@ -64,6 +67,7 @@ function toCandidate(r: Row): Candidate {
     tokenCount: Number(r.token_count),
     documentTitle: r.document_title as string,
     documentNumber: (r.document_number as string | null) ?? null,
+    documentDescription: (r.document_description as string | null) ?? null,
     documentType: r.document_type as DocumentType,
     validityStatus: r.validity_status as ValidityStatus,
     accessLevel: r.access_level as AccessLevel,
@@ -71,6 +75,20 @@ function toCandidate(r: Row): Candidate {
     versionNumber: Number(r.version_number),
     isCurrentVersion: Boolean(r.is_current),
   };
+}
+
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/**
+ * Anexa a ementa quando o trecho não a repete. Sem isso, um artigo que altera
+ * outro ato chega ao reranker sem o assunto (por exemplo, Agenda AC4) e é descartado.
+ */
+export function withDocumentDescription(description: string | null, content: string): string {
+  const ementa = description?.replace(/\s+/g, ' ').trim();
+  if (!ementa) return content;
+  const probe = fold(ementa).slice(0, 48);
+  if (probe.length >= 24 && fold(content).includes(probe)) return content;
+  return `${ementa}\n${content}`;
 }
 
 export async function vectorSearch(

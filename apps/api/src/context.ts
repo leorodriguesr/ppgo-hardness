@@ -7,6 +7,7 @@ export interface Queues {
   ingestion: Queue;
   embeddings: Queue;
   evaluation: Queue;
+  catalogSync: Queue;
 }
 
 export interface AppDeps {

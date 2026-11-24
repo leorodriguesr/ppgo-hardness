@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CATALOG_STATUSES } from './catalog';
 import {
   ACCESS_LEVELS,
   DOCUMENT_TYPES,
@@ -64,6 +65,13 @@ export const documentListQuerySchema = paginationQuerySchema.extend({
   sort: z.enum(['created_desc', 'created_asc', 'title_asc', 'updated_desc']).default('created_desc'),
 });
 export type DocumentListQuery = z.infer<typeof documentListQuerySchema>;
+
+export const catalogListQuerySchema = paginationQuerySchema.extend({
+  q: safeText(200).optional(),
+  status: z.enum(CATALOG_STATUSES).optional(),
+  vinculos: z.enum(['ocultar', 'mostrar']).default('ocultar'),
+});
+export type CatalogListQuery = z.infer<typeof catalogListQuerySchema>;
 
 export const categoryInputSchema = z.object({
   name: safeText(120).pipe(z.string().min(1)),

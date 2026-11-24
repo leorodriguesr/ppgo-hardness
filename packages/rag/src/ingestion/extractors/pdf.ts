@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AppError } from '@rag/shared';
 import type { ExtractedDocument, ExtractedLine, ExtractedPage, ExtractOptions, Extractor } from './types';
+import { textItemsSkippingStruck } from '../struck-text';
 import { isUnreadableText, usableChars } from './types';
 
 interface TextItem {
@@ -111,8 +112,19 @@ export class PdfExtractor implements Extractor {
       for (let n = 1; n <= total; n++) {
         if (opts.signal?.aborted) throw opts.signal.reason;
         const page = await pdf.getPage(n);
-        const content = await page.getTextContent();
-        const items = content.items.filter((i) => 'str' in i) as unknown as TextItem[];
+        let kept: Awaited<ReturnType<typeof textItemsSkippingStruck>> = null;
+        try {
+          const operators = await page.getOperatorList();
+          kept = textItemsSkippingStruck(operators, pdfjs.OPS);
+        } catch {
+          kept = null;
+        }
+        let items: TextItem[];
+        if (kept && kept.length > 0) items = kept;
+        else {
+          const content = await page.getTextContent();
+          items = content.items.filter((i) => 'str' in i) as unknown as TextItem[];
+        }
         rawPages.push({ pageNumber: n, lines: groupLines(items).map(renderLine).filter((l) => l.text.length > 0) });
         page.cleanup();
         await opts.onProgress?.(n, total);
@@ -123,7 +135,8 @@ export class PdfExtractor implements Extractor {
         const lines: ExtractedLine[] = p.lines.map((l, idx) => {
           const prev = p.lines[idx - 1];
           const next = p.lines[idx + 1];
-          const tableRow = l.columns >= 3 || (l.columns === 2 && ((prev?.columns ?? 1) >= 2 || (next?.columns ?? 1) >= 2));
+          const tableRow =
+            l.text.includes(' | ') || l.columns >= 3 || (l.columns === 2 && ((prev?.columns ?? 1) >= 2 || (next?.columns ?? 1) >= 2));
           if (tableRow) return { text: l.text, kind: 'table', fontSize: l.fontSize };
           const ratio = bodySize > 0 ? l.fontSize / bodySize : 1;
           const larger = ratio >= 1.08 && l.text.length <= 160 && !/[.;,]$/.test(l.text);

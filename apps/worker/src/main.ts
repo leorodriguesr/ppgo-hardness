@@ -22,6 +22,7 @@ import { runWithContext } from '@rag/shared/server';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
+import { CATALOG_QUEUES, createCatalogQueues, processCatalogRefresh, processCatalogSync, scheduleCatalogSync } from './catalog-jobs';
 import { runEvaluationJob } from './evaluation-job';
 
 const env = loadEnv();
@@ -103,6 +104,9 @@ async function processEmbeddings(job: Job<EmbeddingJobData>, _token?: string, si
   });
 }
 
+const catalogQueues = createCatalogQueues(connection, prefix);
+await scheduleCatalogSync(catalogQueues.sync);
+
 const workers = [
   new Worker<IngestionJobData>(QUEUES.ingestion, processIngestion, {
     connection,
@@ -117,6 +121,14 @@ const workers = [
     prefix,
     concurrency: 1,
     lockDuration: 600_000,
+  }),
+  new Worker(CATALOG_QUEUES.sync, processCatalogSync(runtime, catalogQueues.refresh), { connection, prefix, concurrency: 1, lockDuration: 600_000 }),
+  new Worker(CATALOG_QUEUES.refresh, processCatalogRefresh(runtime, catalogQueues.ingestion), {
+    connection,
+    prefix,
+    concurrency: 1,
+    limiter: { max: 1, duration: 20_000 },
+    lockDuration: 180_000,
   }),
 ];
 
@@ -133,6 +145,7 @@ async function shutdown(signal: string) {
   logger.info({ signal }, 'worker shutting down');
   clearInterval(heartbeat);
   await Promise.allSettled(workers.map((w) => w.close()));
+  await Promise.allSettled([catalogQueues.sync.close(), catalogQueues.refresh.close(), catalogQueues.ingestion.close()]);
   await connection.quit().catch(() => {});
   await runtime.close();
   process.exit(0);

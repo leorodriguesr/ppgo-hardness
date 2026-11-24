@@ -1,5 +1,6 @@
 'use client';
 
+import { ExternalLink } from 'lucide-react';
 import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +12,10 @@ const ITEM_RE = /Fontes?\s*(\d{1,3})(?:\s*[,–-]?\s*(?:p(?:á|a)g(?:ina)?s?\.?|
 export function linkCitations(text: string): string {
   return text.replace(BRACKET_RE, (whole, inner: string) => {
     if (!/fonte/i.test(inner)) return whole;
+    if (/\bdocumento\b/i.test(inner)) {
+      const n = inner.match(/Fontes?\s*(\d{1,3})/i)?.[1];
+      return n ? `[Ver documento completo](#original-${n})` : whole;
+    }
     const items = [...inner.matchAll(ITEM_RE)];
     if (!items.length) return whole;
     return items
@@ -22,9 +27,30 @@ export function linkCitations(text: string): string {
   });
 }
 
-export const MarkdownAnswer = memo(function MarkdownAnswer({ content, onCite }: { content: string; onCite: (sourceNumber: number, page: number | null) => void }) {
+export const MarkdownAnswer = memo(function MarkdownAnswer({
+  content,
+  onCite,
+  onOpenOriginal,
+}: {
+  content: string;
+  onCite: (sourceNumber: number, page: number | null) => void;
+  onOpenOriginal?: (sourceNumber: number) => void;
+}) {
   const components: Components = {
     a: ({ href, children }) => {
+      const original = href?.match(/^#original-(\d+)$/);
+      if (original) {
+        return (
+          <button
+            type="button"
+            onClick={() => onOpenOriginal?.(Number(original[1]))}
+            className="mx-0.5 inline-flex size-5 items-center justify-center rounded border border-primary/30 bg-primary/10 align-text-bottom text-primary hover:bg-primary/20"
+            aria-label="Ver documento completo"
+          >
+            <ExternalLink className="size-3" />
+          </button>
+        );
+      }
       const m = href?.match(/^#fonte-(\d+)-(\d+)$/);
       if (m) {
         const page = Number(m[2]) || null;

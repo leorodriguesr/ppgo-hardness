@@ -19,6 +19,9 @@ const LIGATURES: Record<string, string> = {
 export function cleanLine(text: string): string {
   return text
     .normalize('NFC')
+    // PDFs do SEI mapeiam a ligadura "ti" para U+0000 no ToUnicode (<019F> <0000>).
+    // O pdf.js emite esse nulo; sem a troca, "justificativa" vira "jusficava" e a busca perde o termo.
+    .replace(/\u0000/g, 'ti')
     .replace(/[\uFB00-\uFB06]/g, (c) => LIGATURES[c] ?? c)
     .replace(/[\u00AD\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/g, '')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')

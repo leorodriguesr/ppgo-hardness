@@ -42,6 +42,17 @@ pid_alive() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+# O tsx e o Next soltam a porta ao recarregar. O processo pai continua vivo; a porta, não.
+service_up() {
+  local name="$1"
+  local port="$2"
+  if [[ -f "$RUN/$name.pid" ]]; then
+    pid_alive "$RUN/$name.pid"
+    return
+  fi
+  listen "$port"
+}
+
 kill_tree() {
   local pid="$1"
   local child
@@ -214,7 +225,46 @@ cmd_up() {
   wait_http "http://127.0.0.1:$API_PORT/health" "API"
   wait_http "http://127.0.0.1:$RERANK_PORT/health" "Reranker"
   wait_http "http://127.0.0.1:$WEB_PORT/chat" "Chat"
+  hold_terminal
+}
+
+# Segura o terminal que subiu a aplicação. Prompt livre significa que ela não está no ar.
+hold_terminal() {
+  local supervisor="$RUN/supervisor.pid"
+  if pid_alive "$supervisor"; then
+    log "A aplicação já está no ar, no terminal que rodou npm run dev:up."
+    log "Para encerrar: Ctrl+C nesse terminal, ou npm run dev:down."
+    return 0
+  fi
+  echo $$ >"$supervisor"
   log "Aplicação no ar: http://127.0.0.1:$WEB_PORT"
+  log "Este terminal fica ocupado enquanto ela estiver rodando. Ctrl+C encerra."
+
+  release() {
+    trap - INT TERM HUP
+    cmd_down
+    rm -f "$supervisor"
+    exit 0
+  }
+  trap release INT TERM HUP
+
+  local down=0
+  while true; do
+    sleep 2
+    if service_up api "$API_PORT" && service_up web "$WEB_PORT"; then
+      down=0
+      continue
+    fi
+    down=$((down + 1))
+    if (( down < 3 )); then
+      continue
+    fi
+    trap - INT TERM HUP
+    log "A aplicação parou. Encerrando o que ainda estiver no ar."
+    cmd_down
+    rm -f "$supervisor"
+    exit 0
+  done
 }
 
 cmd_down() {

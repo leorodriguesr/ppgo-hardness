@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import type { AppDeps } from './context';
 import { createAuthenticator } from './plugins/auth';
 import { adminRoutes } from './routes/admin';
+import { catalogRoutes } from './routes/catalog';
 import { chatRoutes } from './routes/chat';
 import { conversationRoutes } from './routes/conversations';
 import { documentRoutes } from './routes/documents';
@@ -126,6 +127,7 @@ export async function buildApp(deps: AppDeps) {
     async (api) => {
       api.addHook('onRequest', authenticate);
       await api.register(documentRoutes, { deps });
+      await api.register(catalogRoutes, { deps });
       await api.register(conversationRoutes, { deps });
       await api.register(chatRoutes, { deps });
       await api.register(adminRoutes, { deps });

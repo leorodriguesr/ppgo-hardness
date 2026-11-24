@@ -5,7 +5,7 @@ import { Stopwatch } from '@rag/shared/server';
 import { trace } from '@opentelemetry/api';
 import type { EffectiveFilters } from './filters';
 import { dedupeCandidates, reciprocalRankFusion, type FusedCandidate } from './fusion';
-import { lexicalSearch, neighborChunks, referenceSearch, vectorSearch, type Candidate } from './search';
+import { lexicalSearch, neighborChunks, referenceSearch, vectorSearch, withDocumentDescription, type Candidate } from './search';
 import { promptSafeContent } from '../security/injection';
 import { focusProcedureSection } from './focus';
 
@@ -128,7 +128,7 @@ export async function retrieve(
             input.query,
             pool.map((c) => ({
               id: c.chunkId,
-              text: [c.contextHeader, c.headingPath.join(' › '), c.structuralRef, promptSafeContent(c.content)].filter(Boolean).join('\n'),
+              text: [c.contextHeader, c.headingPath.join(' › '), c.structuralRef, promptSafeContent(withDocumentDescription(c.documentDescription, c.content))].filter(Boolean).join('\n'),
             })),
             { signal: input.signal },
           );
@@ -155,6 +155,9 @@ export async function retrieve(
       if (r.expandNeighbors && ranked.length > 0) {
         ranked = await expandSplitArticles(deps.db, ranked, r.finalTopK);
       }
+      if (ranked.length > 0 && queryAsksForPeople(input.query)) {
+        ranked = await expandRollContinuation(deps.db, ranked);
+      }
 
       span.setAttributes({
         'rag.vector_candidates': vector.length,
@@ -179,6 +182,50 @@ export async function retrieve(
       span.end();
     }
   });
+}
+
+const PERSON_NAME_RE = /\p{Lu}[\p{Ll}'’]+(?:\s+(?:d[aoe]s?|e)\s+|\s+)\p{Lu}[\p{Ll}'’]+/gu;
+const NOT_A_PERSON = new Set(
+  'unidade policia penal regional casa prisao provisoria diretoria geral coordenadoria comissao inspecao estado goias artigo portaria secretaria complexo prisional centro convivencia nucleo setor gerencia'.split(
+    ' ',
+  ),
+);
+const foldToken = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/** A pergunta pede uma relação de pessoas, não uma regra ou um prazo. */
+export function queryAsksForPeople(query: string): boolean {
+  return /\b(quem|pessoa|pessoas|servidor|servidores|integrante|integrantes|comiss[aã]o|designad[oa]s?|nomead[oa]s?|benefici[aá]ri[oa]s?)\b/i.test(query);
+}
+
+/** Nomes de pessoas no trecho. Nome de unidade (Casa de Prisão, Unidade de Polícia) não conta. */
+export function personNameCount(text: string): number {
+  const matches = text.match(PERSON_NAME_RE) ?? [];
+  return matches.filter((m) => {
+    const words = m.match(/\p{Lu}[\p{Ll}'’]+/gu) ?? [];
+    return words.length >= 2 && words.every((w) => !NOT_A_PERSON.has(foldToken(w)));
+  }).length;
+}
+
+/**
+ * Se o melhor trecho de uma pergunta por pessoas não traz a relação, puxa os dois chunks
+ * seguintes do mesmo documento. Não expande quando o trecho já tem vários nomes, para não
+ * empurrar as outras portarias para fora do contexto.
+ */
+async function expandRollContinuation(db: Database, ranked: FusedCandidate[]): Promise<FusedCandidate[]> {
+  const head = ranked[0];
+  if (!head || personNameCount(head.content) >= 3) return ranked;
+  const neighbors = await neighborChunks(db, head.versionId, [head.chunkIndex + 1, head.chunkIndex + 2, head.chunkIndex + 3, head.chunkIndex + 4]);
+  neighbors.sort((a, b) => a.chunkIndex - b.chunkIndex);
+  const present = new Set(ranked.map((c) => c.chunkId));
+  const extra: FusedCandidate[] = [];
+  for (const n of neighbors) {
+    if (present.has(n.chunkId)) continue;
+    present.add(n.chunkId);
+    extra.push({ ...n, fusedScore: head.fusedScore * 0.99, rerankScore: head.rerankScore });
+    if (personNameCount(n.content) >= 3) break;
+  }
+  if (extra.length === 0) return ranked;
+  return [head, ...extra, ...ranked.slice(1)];
 }
 
 /**

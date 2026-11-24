@@ -27,6 +27,7 @@ export async function createTestApi(): Promise<TestApi> {
     ingestion: new Queue(QUEUES.ingestion, opts),
     embeddings: new Queue(QUEUES.embeddings, opts),
     evaluation: new Queue(QUEUES.evaluation, opts),
+    catalogSync: new Queue('catalog-sync', opts),
   };
   const app = await buildApp({ runtime, queues, redis });
   await app.ready();

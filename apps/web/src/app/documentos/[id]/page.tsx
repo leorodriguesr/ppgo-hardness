@@ -13,7 +13,7 @@ import {
   type UploadResultDto,
 } from '@rag/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, FilePlus2, Power, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, FilePlus2, Power, RefreshCw, Save, Unlink } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { AccessBadge, isProcessing, ProcessingStatus, ValidityBadge } from '@/components/documents/badges';
 import { MetadataFields, toMetadataPayload, type MetadataFormValues } from '@/components/documents/metadata-fields';
 import { fileUrl } from '@/components/chat/source-panel';
+import { RelatedActs } from '../relacoes';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { Alert, Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, Progress, Skeleton, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/primitives';
@@ -50,6 +51,7 @@ const QUALITY_FLAG_LABELS: Record<string, string> = {
   low_ocr_confidence: 'OCR com baixa confiança',
   pages_without_text: 'páginas sem texto aproveitável',
   unreadable_text_layer: 'texto digital ilegível (lido por OCR)',
+  leitura_alternativa: 'página relida porque o texto digital veio quebrado',
   ocr_unavailable: 'OCR indisponível',
   ocr_disabled: 'OCR desativado',
   pdf_active_content: 'PDF com conteúdo ativo (não executado)',
@@ -192,7 +194,7 @@ export default function DocumentDetailPage() {
   const qc = useQueryClient();
   const { can } = useMe();
   const isAdmin = can('admin');
-  const [confirm, setConfirm] = useState<null | 'soft' | 'hard'>(null);
+  const [confirmDetach, setConfirmDetach] = useState(false);
   const [versionProgress, setVersionProgress] = useState<number | null>(null);
   const versionInput = useRef<HTMLInputElement>(null);
 
@@ -250,11 +252,12 @@ export default function DocumentDetailPage() {
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const remove = useMutation({
-    mutationFn: (hard: boolean) => api(`/documents/${id}${hard ? '?hard=true' : ''}`, { method: 'DELETE' }),
+  const detach = useMutation({
+    mutationFn: () => api(`/documents/${id}/detach`, { method: 'POST' }),
     onSuccess: () => {
-      toast.success('Documento excluído.');
+      toast.success('Documento desanexado. O ato continua na lista do site.');
       void qc.invalidateQueries({ queryKey: ['documents'] });
+      void qc.invalidateQueries({ queryKey: ['catalog'] });
       router.push('/documentos');
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -337,14 +340,16 @@ export default function DocumentDetailPage() {
                 <Button variant="outline" size="sm" onClick={() => toggleActive.mutate(!d.isActive)} disabled={toggleActive.isPending}>
                   <Power /> {d.isActive ? 'Desativar' : 'Reativar'}
                 </Button>
-                <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirm('soft')}>
-                  <Trash2 /> Excluir
+                <Button variant="outline" size="sm" onClick={() => setConfirmDetach(true)}>
+                  <Unlink /> Desanexar
                 </Button>
               </>
             )}
           </div>
         </div>
       </div>
+
+      <RelatedActs documentId={d.id} />
 
       {versionProgress !== null && (
         <div className="flex items-center gap-2 text-sm">
@@ -427,31 +432,13 @@ export default function DocumentDetailPage() {
       </Tabs>
 
       <ConfirmDialog
-        open={confirm === 'soft'}
-        onOpenChange={(v) => !v && setConfirm(null)}
-        title="Excluir documento?"
-        description="O documento deixa de aparecer na biblioteca e nas respostas. O registro e os arquivos são mantidos para auditoria. Para apagar definitivamente, use a exclusão permanente."
-        confirmLabel="Excluir"
-        destructive
-        pending={remove.isPending}
-        onConfirm={() => remove.mutate(false)}
-      />
-      <div className="flex justify-end pb-4">
-        {isAdmin && (
-          <Button variant="link" size="sm" className="text-destructive" onClick={() => setConfirm('hard')}>
-            Excluir permanentemente
-          </Button>
-        )}
-      </div>
-      <ConfirmDialog
-        open={confirm === 'hard'}
-        onOpenChange={(v) => !v && setConfirm(null)}
-        title="Excluir permanentemente?"
-        description="Todas as versões, páginas, trechos, embeddings e arquivos originais serão apagados. Esta ação não pode ser desfeita."
-        confirmLabel="Excluir permanentemente"
-        destructive
-        pending={remove.isPending}
-        onConfirm={() => remove.mutate(true)}
+        open={confirmDetach}
+        onOpenChange={setConfirmDetach}
+        title="Desanexar documento?"
+        description="O arquivo sai do chat e da indexação. O ato permanece na lista, como no site da Polícia Penal, e pode ser indexado de novo se estiver em vigor."
+        confirmLabel="Desanexar"
+        pending={detach.isPending}
+        onConfirm={() => detach.mutate()}
       />
     </div>
   );

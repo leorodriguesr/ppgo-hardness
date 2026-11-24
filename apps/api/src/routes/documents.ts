@@ -11,6 +11,7 @@ import {
   listPages,
   listProcessingEvents,
   resetVersionForReprocess,
+  detachCatalogDocument,
   softDeleteDocument,
   updateDocumentMetadata,
 } from '@rag/database';
@@ -89,6 +90,7 @@ export const documentRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (a
     { onRequest: requireRole('admin'), schema: { params: idParams, querystring: z.object({ hard: z.enum(['true', 'false']).optional() }), tags: ['documentos'] } },
     async (req, reply) => {
       await accessibleDocument(deps, req.params.id, req.principal);
+      await detachCatalogDocument(db, req.params.id);
       if (req.query.hard === 'true') {
         const res = await hardDeleteDocument(db, req.params.id);
         if (!res) throw new AppError('NOT_FOUND', 'Documento não encontrado.');
@@ -103,6 +105,16 @@ export const documentRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (a
       return reply.status(204).send();
     },
   );
+
+  app.post('/documents/:id/detach', { onRequest: requireRole('admin'), schema: { params: idParams, tags: ['documentos'] } }, async (req, reply) => {
+    await accessibleDocument(deps, req.params.id, req.principal);
+    await detachCatalogDocument(db, req.params.id);
+    const res = await hardDeleteDocument(db, req.params.id);
+    if (!res) throw new AppError('NOT_FOUND', 'Documento não encontrado.');
+    for (const key of res.storageKeys) await storage.delete(key).catch(() => {});
+    await audit(req, 'document.detach', req.params.id, { files: res.storageKeys.length });
+    return reply.status(204).send();
+  });
 
   app.post('/documents/:id/reprocess', { onRequest: requireRole('admin'), schema: { params: idParams, tags: ['documentos'] } }, async (req, reply) => {
     const doc = await accessibleDocument(deps, req.params.id, req.principal);

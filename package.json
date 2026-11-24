@@ -17,6 +17,7 @@
     "infra:status": "bash infrastructure/local/infra.sh status",
     "db:migrate": "npm run migrate -w @rag/database",
     "db:seed": "npm run seed -w @rag/database",
+    "catalog:import": "tsx scripts/import-catalog.ts",
     "dev:up": "bash scripts/dev.sh up",
     "dev:down": "bash scripts/dev.sh down",
     "dev:status": "bash scripts/dev.sh status",

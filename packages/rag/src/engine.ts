@@ -28,6 +28,7 @@ import { verifyGrounding } from './generation/grounding';
 import { buildUserPrompt, PROMPT_VERSION, SYSTEM_PROMPT } from './generation/prompts';
 import { isHistoricalQuestion, type EffectiveFilters } from './retrieval/filters';
 import { rewriteQuery, selectHistory, type HistoryTurn } from './retrieval/query-rewrite';
+import { ementaListQuery, formatEmentaAnswer, searchActsByEmenta, EMENTA_LIST_LIMIT } from './retrieval/ementa-search';
 import { retrieve, type RetrievalStats } from './retrieval/retriever';
 import { detectPromptInjection } from './security/injection';
 
@@ -186,6 +187,50 @@ export class RagEngine {
     const includeHistorical = input.filters?.includeHistorical ?? (isHistoricalQuestion(input.question) || isHistoricalQuestion(searchQuery));
     const filters: EffectiveFilters = { ...(input.filters ?? {}), clearance: input.principal.clearance, includeHistorical };
     yield { type: 'status', stage: 'retrieving' };
+    const earlierUser = [...history].reverse().find((turn) => turn.role === 'user')?.content ?? '';
+    const ementaQuery = ementaListQuery(input.question, earlierUser) ?? (searchQuery !== input.question ? ementaListQuery(searchQuery) : null);
+    if (ementaQuery) {
+      const hits = await sw.measure('ementaSearch', () => searchActsByEmenta(this.deps.db, ementaQuery, filters));
+      if (hits.length > 0) {
+        const formatted = formatEmentaAnswer(hits, hits.length > EMENTA_LIST_LIMIT, ementaQuery.documentType);
+        const sources = formatted.sources.map(toSourceDto);
+        yield { type: 'sources', sources };
+        yield { type: 'status', stage: 'generating' };
+        yield { type: 'token', text: formatted.text };
+        yield { type: 'status', stage: 'verifying' };
+        const g = await sw.measure('grounding', () =>
+          verifyGrounding({
+            answer: formatted.text,
+            sources: formatted.sources,
+            minSupportScore: settings.grounding.minSupportScore,
+            llmVerifier: undefined,
+          }),
+        );
+        const grounding: GroundingReportDto | null = settings.grounding.enabled ? g.report : null;
+        const claimFor = (idx: number) => g.claims.find((c) => idx >= c.start && idx < c.end)?.text ?? '';
+        return {
+          rewrittenQuery,
+          searchQuery,
+          includeHistorical,
+          retrieval: { vectorCandidates: 0, lexicalCandidates: 0, fusedCandidates: hits.length, rerankedCandidates: 0, rerankFailed: false, rerankSkipped: true },
+          rankedChunkIds: formatted.sources.map((s) => s.chunkId),
+          rankedCandidates: [],
+          model: settings.generation.chatModel,
+          embeddingModelId: model.id,
+          evidenceScore: 1,
+          promptVersion: PROMPT_VERSION,
+          questionFlags,
+          content: formatted.text,
+          answerType: 'answered',
+          sources,
+          contextSources: formatted.sources,
+          citations: toCitationRecords(g.checks, claimFor, g.supportByCitation),
+          grounding,
+          timings: sw.toJSON(),
+          usage: { tokensIn: chat.tokensIn, tokensOut: chat.tokensOut, costUsd: chat.costUsd },
+        };
+      }
+    }
     const retrieval = await retrieve(
       { db: this.deps.db, embeddingModel: model, embeddingProvider, reranker },
       { query: searchQuery, filters, settings, signal: input.signal },

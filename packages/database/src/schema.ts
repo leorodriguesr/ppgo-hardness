@@ -5,6 +5,8 @@ import {
   char,
   customType,
   date,
+  foreignKey,
+  index,
   integer,
   jsonb,
   numeric,
@@ -14,6 +16,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -363,6 +366,82 @@ export const evaluationRuns = pgTable('evaluation_runs', {
   error: text('error'),
   startedAt: ts('started_at').notNull().defaultNow(),
   finishedAt: ts('finished_at'),
+});
+
+/** Fila do acervo externo (Legisla). O PDF só entra na biblioteca quando alguém pede a indexação. */
+export const catalogActs = pgTable(
+  'catalog_acts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    source: text('source').notNull().default('legisla'),
+    externalId: integer('external_id').notNull(),
+    title: text('title').notNull(),
+    documentType: text('document_type').notNull(),
+    documentNumber: text('document_number'),
+    issuingBody: text('issuing_body'),
+    publicationDate: date('publication_date', { mode: 'string' }),
+    effectiveDate: date('effective_date', { mode: 'string' }),
+    validityStatus: text('validity_status').notNull(),
+    accessLevel: text('access_level').notNull().default('publico'),
+    description: text('description'),
+    status: text('status').notNull().default('pendente'),
+    errorMessage: text('error_message'),
+    documentId: uuid('document_id').references(() => documents.id, { onDelete: 'set null' }),
+    wpPostId: integer('wp_post_id'),
+    pageUrl: text('page_url'),
+    fileUrl: text('file_url'),
+    fileKind: text('file_kind'),
+    contentHash: text('content_hash'),
+    fileEtag: text('file_etag'),
+    revokedBy: text('revoked_by'),
+    siteCategory: text('site_category'),
+    checkedAt: ts('checked_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [unique('catalog_acts_source_external_id').on(t.source, t.externalId)],
+);
+
+/** Vínculo entre o ato consolidado e os atos que o alteram ou que ele revoga. */
+export const catalogActLinks = pgTable(
+  'catalog_act_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    parentSource: text('parent_source').notNull(),
+    parentExternalId: integer('parent_external_id').notNull(),
+    childSource: text('child_source').notNull(),
+    childExternalId: integer('child_external_id').notNull(),
+    kind: text('kind').notNull(),
+    incorporated: boolean('incorporated').notNull().default(false),
+    origin: text('origin').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique('catalog_act_links_pair').on(t.parentSource, t.parentExternalId, t.childSource, t.childExternalId, t.kind),
+    index('catalog_act_links_parent_idx').on(t.parentSource, t.parentExternalId),
+    index('catalog_act_links_child_idx').on(t.childSource, t.childExternalId),
+    foreignKey({
+      columns: [t.parentSource, t.parentExternalId],
+      foreignColumns: [catalogActs.source, catalogActs.externalId],
+      name: 'catalog_act_links_parent_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [t.childSource, t.childExternalId],
+      foreignColumns: [catalogActs.source, catalogActs.externalId],
+      name: 'catalog_act_links_child_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/** Cursor da sincronização com o site da Polícia Penal. */
+export const catalogSyncState = pgTable('catalog_sync_state', {
+  id: text('id').primaryKey(),
+  cursorAt: ts('cursor_at'),
+  cursorModified: text('cursor_modified'),
+  lastRunAt: ts('last_run_at'),
+  lastSuccessAt: ts('last_success_at'),
+  lastError: text('last_error'),
+  stats: jsonb('stats').$type<Record<string, number>>().notNull().default({}),
 });
 
 export const evaluationResults = pgTable('evaluation_results', {

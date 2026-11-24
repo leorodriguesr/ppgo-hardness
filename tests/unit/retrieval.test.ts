@@ -1,4 +1,4 @@
-import { dedupeCandidates, focusProcedureSection, introducedFacts, needsContext, reciprocalRankFusion, withConversationTopic, type Candidate } from '@rag/rag';
+import { dedupeCandidates, ementaListQuery, focusProcedureSection, formatEmentaAnswer, introducedFacts, needsContext, personNameCount, queryAsksForPeople, reciprocalRankFusion, withConversationTopic, type Candidate, type EmentaHit } from '@rag/rag';
 import type { FusedCandidate } from '@rag/rag';
 import { describe, expect, it } from 'vitest';
 
@@ -99,6 +99,63 @@ describe('dedupeCandidates', () => {
     const b = cand('b', { documentId: 'd1', content: `${text}.` });
     const c = cand('c', { documentId: 'd2', content: text });
     expect(dedupeCandidates([a, b, c]).map((x) => x.chunkId)).toEqual(['a', 'c']);
+  });
+});
+
+describe('relação de pessoas', () => {
+  it('reconhece pergunta por pessoas e ignora pergunta por prazo', () => {
+    expect(queryAsksForPeople('quais as pessoas que inspecionaram a Casa de Prisão Provisória?')).toBe(true);
+    expect(queryAsksForPeople('quais os servidores possuem gratificação de risco de vida?')).toBe(true);
+    expect(queryAsksForPeople('qual o prazo de defesa?')).toBe(false);
+    expect(queryAsksForPeople('quais os materiais da revista pessoal?')).toBe(false);
+  });
+
+  it('conta nomes no trecho e não dispara continuação quando a relação já veio', () => {
+    expect(personNameCount('Institui comissão para inspecionar a unidade.')).toBe(0);
+    expect(
+      personNameCount('Institui comissão para inspecionar a Unidade de Polícia Penal Regional Casa de Prisão Provisória da 1ª CRPP.'),
+    ).toBe(0);
+    expect(
+      personNameCount('Designou Dr. Aurécio de Oliveira Lobo, Dra. Alessandra Ferreira Borges, Dra. Sueli Almeida Neves Sousa e Dr. Tiago Batista de Oliveira.'),
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('lista por ementa', () => {
+  it('pede as portarias de um assunto e ignora pergunta sobre pessoas ou um ato numerado', () => {
+    expect(ementaListQuery('quais as portarias que concedem risco de vida?')).toEqual({ topic: 'risco vida', documentType: 'portaria' });
+    expect(ementaListQuery('quais as pessoas que inspecionaram a Casa de Prisão Provisória?')).toBeNull();
+    expect(ementaListQuery('quais os servidores que possuem gratificação por risco de vida?')).toBeNull();
+    expect(ementaListQuery('o que diz a portaria 328/2026?')).toBeNull();
+    expect(ementaListQuery('quais as portarias?')).toBeNull();
+    expect(ementaListQuery('quero todas as portarias que tratam desse assunto')).toBeNull();
+    expect(
+      ementaListQuery('quero todas as portarias que tratam desse assunto', 'quais os servidores que possuem gratificação por risco de vida?'),
+    ).toEqual({ topic: 'gratificação risco vida', documentType: 'portaria' });
+  });
+
+  it('lista cada portaria pelo título, sem repetir o número', () => {
+    const hit = {
+      title: 'Portaria DGPP nº 45/2026',
+      documentNumber: '45/2026',
+      documentType: 'portaria',
+      description: 'Concede Gratificação de Risco de Vida.',
+      validityStatus: 'vigente',
+      publicationDate: '2026-01-01',
+      documentId: 'doc',
+      accessLevel: 'publico',
+      chunkId: 'chunk',
+      versionId: 'ver',
+      pageStart: 1,
+      pageEnd: 1,
+      versionNumber: 1,
+      isCurrentVersion: true,
+    } satisfies EmentaHit;
+    const { text, sources } = formatEmentaAnswer([hit], false, 'portaria');
+    expect(text).toContain('Entre as portarias já indexadas, a ementa reúne 1 portaria vigente');
+    expect(text).toContain('- Portaria DGPP nº 45/2026: Concede Gratificação de Risco de Vida. [Fonte 1, página 1] [Fonte 1, documento]');
+    expect(text).not.toContain('45/2026 —');
+    expect(sources).toHaveLength(1);
   });
 });
 

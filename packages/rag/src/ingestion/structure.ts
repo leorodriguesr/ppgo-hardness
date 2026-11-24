@@ -219,6 +219,23 @@ export function parseElements(pages: ExtractedPage[], paginated: boolean): Struc
   return elements;
 }
 
+/** Rótulo curto em caixa alta, típico de coluna que quebrou de linha ("A PARTIR"). */
+function isWrappedTableCaption(text: string): boolean {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > 0 && clean.length <= 40 && clean.split(' ').length <= 3 && clean === clean.toLocaleUpperCase('pt-BR');
+}
+
+/** Há uma tabela antes do próximo artigo. */
+function tableBeforeNextArticle(elements: StructElement[], from: number): boolean {
+  for (let i = from; i < elements.length; i++) {
+    const el = elements[i]!;
+    if (el.type === 'article') return false;
+    if (el.type === 'table') return true;
+    if (el.type === 'heading' && !isWrappedTableCaption(el.text)) return false;
+  }
+  return false;
+}
+
 function headingText(el: StructElement): string {
   return el.text.replace(/\s+/g, ' ').trim().slice(0, 200);
 }
@@ -240,7 +257,14 @@ export function buildUnits(elements: StructElement[]): StructUnit[] {
     current = null;
   };
 
-  for (const el of elements) {
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i]!;
+    // Cabeçalho de tabela quebrado ("A PARTIR") não pode encerrar o artigo:
+    // a lista de nomes ficaria num trecho sem o assunto e a busca não a traz.
+    if (el.type === 'heading' && current?.kind === 'article' && isWrappedTableCaption(el.text) && tableBeforeNextArticle(elements, i + 1)) {
+      current.elements.push({ ...el, type: 'text' });
+      continue;
+    }
     if (el.type === 'heading') {
       push();
       const text = headingText(el);

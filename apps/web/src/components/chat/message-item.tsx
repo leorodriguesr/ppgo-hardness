@@ -10,6 +10,7 @@ import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogFooter } from '../ui/dialog';
 import { Badge, Label, NativeSelect, Textarea } from '../ui/primitives';
 import { MarkdownAnswer } from './markdown-answer';
+import { fileUrl } from './source-panel';
 
 export type ViewMessage = MessageDto & { stage?: string; errorText?: string };
 
@@ -118,6 +119,14 @@ export function MessageItem({
     if (source) onCite(source, page);
     else toast.warning(`A Fonte ${n} não está entre as fontes desta resposta.`);
   };
+  const openOriginal = (n: number) => {
+    const source = message.sources.find((s) => s.sourceNumber === n);
+    if (!source) {
+      toast.warning(`A Fonte ${n} não está entre as fontes desta resposta.`);
+      return;
+    }
+    window.open(fileUrl(source.documentId, source.versionId, true, null), '_blank', 'noopener,noreferrer');
+  };
   const copy = async () => {
     await navigator.clipboard.writeText(message.content);
     setCopied(true);
@@ -143,7 +152,7 @@ export function MessageItem({
           <Loader2 className="size-4 animate-spin" /> {STAGE_LABELS[message.stage ?? ''] ?? 'Processando…'}
         </p>
       )}
-      {message.content && <MarkdownAnswer content={message.content} onCite={cite} />}
+      {message.content && <MarkdownAnswer content={message.content} onCite={cite} onOpenOriginal={openOriginal} />}
       {streaming && message.content && <span className="inline-block h-4 w-1.5 animate-pulse bg-foreground/60" aria-hidden />}
       {message.status === 'cancelled' && <p className="text-xs text-muted-foreground">Resposta interrompida.</p>}
       {message.status === 'error' && (
